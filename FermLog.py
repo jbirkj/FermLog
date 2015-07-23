@@ -1,14 +1,15 @@
 
-import time, datetime, sys
+import time, datetime, sys, os, glob
 import gspread
-#from tkinter import *
+import urllib, urllib.request
+import subprocess
 
 sys.path.append("/home/pi/git/quick2wire-python-api")
 
 from subprocess import Popen, PIPE
 from quick2wire.i2c import I2CMaster, writing_bytes, reading
 
-from Logging import textLog, textLogInit
+#from CloudLog import ThingSpeakLog
 
 address = 0x28
 Tekst = [ 0x54, 0x65, 0x6d, 0x70, 0x31, 0x3d ]		#"Temp1="
@@ -37,6 +38,10 @@ sRomCode3 = "40 166 216 156 4 0 0 253"
 #cROMCODE1[6]=0x00;	cROMCODE2[6]=0x00;	cROMCODE3[6]=0x00;	cROMCODE4[6]=0x00;	cROMCODE5[6]=0x0;
 #cROMCODE1[7]=0x9b;	cROMCODE2[7]=0xb8;	cROMCODE3[7]=0xfd;	cROMCODE4[7]=0xd9;	cROMCODE5[7]=0x83;
 
+THINGSPEAKKEY = '34LFZZ49UNKUFHNV'
+THINGSPEAKURL = 'https://api.thingspeak.com/update'
+FURL = 'https://api.thingspeak.com/update?key=34LFZZ49UNKUFHNV&field1='
+
 def I2CWrite(value1) :
     I2CMaster().transaction( writing_bytes(address, value1) )
     time.sleep(0.1)
@@ -48,59 +53,89 @@ def I2CRead():
     time.sleep(1)
     return read
 
-def GoogleSubmit(value1, value2, value3):
-    try:
-        gs = gspread.login('jesperbirkp@gmail.com', 'zxkfdgmtpslbqpzg')
-    except:
-        print('fail')
-        sys.exit
-    wks = gs.open("TempLog1").sheet1
+def read_temp_raw(deviceF):
+#	f=open(device_file, 'r')
+#	lines = f.readlines()
+#	f.close()
+#	return lines
+	catdata = subprocess.Popen(['cat',deviceF],
+                                   stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE)
+	out,err = catdata.communicate()
+	out_decode = out.decode('utf-8')
+	lines = out_decode.split('\n')
+	return lines
+
+def read_temp(deviceFile):
+	line = read_temp_raw(deviceFile)
+	while line[0].strip()[-3:] != 'YES':
+		time.sleep(0.2)
+		line = read_temp_raw()
+	equals_pos = line[1].find('t=')
+	if equals_pos != -1:
+		temp_string = line[1][equals_pos+2:]
+		temp_c = float(temp_string)/1000.0
+		return temp_c
+
+def sendData( url, key, field1, temp):
+    print('1')
+    values = {'key' : key, field1 : temp }
     
-    #writing to Google sheet
-    values = [ datetime.datetime.now(), 'sensor', value1, value2, value3]
-    wks.append_row(values)
-    
-    #wks.close()
-    
+    postdata = urllib.parse.urlencode(values)
+    print(postdata)
+    req = urllib.request.Request(url, postdata)
+    print(req)  
+#    try:
+    response = urllib.request.urlopen(req, None, 5)
+    html_string = response.read()
+    response.close()
+    print('done')
+#    except:
+#        print('wrong')
+   
 
 print('starting...')    #printing in prompt
 
-path = "./DS18b20read.a "
-path1 = path + sRomCode5
-path2 = path + sRomCode2
-path3 = path + sRomCode3
-print(path1)
-print(path2)
-print(path3)
+os.system('modprobe w1-gpio')
+os.system('modprobe w1-therm')
 
+base_dir = '/sys/bus/w1/devices/'
+device_folder = glob.glob(base_dir + '28*')[0]
+device_file = device_folder + '/w1_slave'
+device_file1 = '/sys/bus/w1/devices/28-0000049cd8a6/w1_slave'
+device_file2 = '/sys/bus/w1/devices/28-000005454cf7/w1_slave'
+device_file3 = '/sys/bus/w1/devices/28-0000049cd8a6/w1_slave'
+
+print("T1: ", read_temp(device_file1))
+print("T2: ", read_temp(device_file2))
+
+'''
 # creating lof file
 logFileName = datetime.datetime.now().strftime("%y%m%d") + "FermentLogFile.csv"
 textLogInit(logFileName)
-
+'''
 #Starting Loop
 
 try:
 
 	while True:
-		#proc = Popen(["sudo ./DS18b20read.a "],
-		proc1 = Popen(path1 ,shell=True, stdout=PIPE)
-		stdoutvalue = proc1.communicate()
-		TempRead1 = eval(stdoutvalue[0])
-		#print("current temperature 1 is ", TempRead1, "degree Celsius" )
+		TempRead1 = read_temp(device_file1)
+		print("current temperature 1 is ", TempRead1, "degree Celsius" )
 				
-		proc2 = Popen(path2 , shell=True, stdout=PIPE)
-		stdoutvalue = proc2.communicate()
-		TempRead2 = eval(stdoutvalue[0])
-		#print("current temperature 2 is ", TempRead2, "degree Celsius" )
+		TempRead2 = read_temp(device_file2)
+		print("current temperature 2 is ", TempRead2, "degree Celsius" )
 				
-		proc3 = Popen(path3 , shell=True, stdout=PIPE)
-		stdoutvalue = proc3.communicate()
-		TempRead3 = eval(stdoutvalue[0])
-		print("current temperature 1-2-3 is ", TempRead3, TempRead2, TempRead3, "degree Celsius at", datetime.datetime.now() )
+		#TempRead3 = read_temp(device_file3)
+		#print("current temperature 1-2-3 is ", TempRead3, TempRead2, TempRead3, "degree Celsius at", datetime.datetime.now() )
 		
 		#GoogleSubmit(TempRead1, TempRead2, TempRead3)
-		textLog(logFileName, datetime.datetime.now(), TempRead1, TempRead2, TempRead3 )
+		#textLog(logFileName, datetime.datetime.now(), TempRead1, TempRead2, TempRead3 )
 
+		out = urllib.request.urlopen((FURL+str(TempRead1)), None)
+		#print(out)
+                #sendData(THINGSPEAKURL, THINGSPEAKKEY, 'field1', 23)
+                #sys.stdout.flush()
+		#print('CLOUD LOG DONE')
 
 		# Write to LCD - clear displa and move cursor to start
 		I2CWrite(0xFE)
@@ -110,21 +145,21 @@ try:
 		for a in range(len(Tekst)):
 			I2CWrite(Tekst[a])
 		I2CWrite(0x30+(int(TempRead1/10)))      
-		I2CWrite(0x30+TempRead1%10)             
+		I2CWrite(0x30+(int(TempRead1%10)))             
 		
-		#cont line wirting " Temp3=
+		'''#cont line wirting " Temp3=
 		for a in range(len(Tekst1)):
 			I2CWrite(Tekst1[a])
 		I2CWrite(0x30+(int(TempRead3/10)))      
 		I2CWrite(0x30+TempRead3%10)             
-		
+		'''
 		# writing LCD line 2 with Temp2
 		for a in range(len(Tekst2)):
 			I2CWrite(Tekst2[a])
 		I2CWrite(0x30+(int(TempRead2/10)))
-		I2CWrite(0x30+TempRead2%10)
+		I2CWrite(0x30+(int(TempRead2%10)))
 		
-		time.sleep(3600)
+		time.sleep(5)
     
 except KeyboardInterrupt:
     #proc1.terminate()
