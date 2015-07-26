@@ -40,17 +40,26 @@ sRomCode3 = "40 166 216 156 4 0 0 253"
 
 THINGSPEAKKEY = '34LFZZ49UNKUFHNV'
 THINGSPEAKURL = 'https://api.thingspeak.com/update'
-FURL = 'https://api.thingspeak.com/update?key=34LFZZ49UNKUFHNV&field1='
+FURL1 = 'https://api.thingspeak.com/update?key=34LFZZ49UNKUFHNV&field1='
+FURL2 = '&field2='
+FURL3 = '&field3='
 
 def I2CWrite(value1) :
-    I2CMaster().transaction( writing_bytes(address, value1) )
-    time.sleep(0.1)
+    #I2CMaster().transaction( writing_bytes(address, value1) )
+    with I2CMaster() as bus:
+        bus.transaction( writing_bytes(address, value1) )
+#    time.sleep(0.1)
+    #self.bus.close()
+    #I2CMaster().close()
     return 1
 
 def I2CRead():
-    time.sleep(1)
-    read = I2CMaster().transaction( reading(address, 1) )[0]
-    time.sleep(1)
+    #time.sleep(1)
+    #read = I2CMaster().transaction( reading(address, 1) )[0]
+    with I2CMaster() as bus:
+        read = bus.transaction( reading(address, 1) )[0]
+#    time.sleep(1)
+    #I2CMaster().close()
     return read
 
 def read_temp_raw(deviceF):
@@ -104,11 +113,12 @@ device_folder = glob.glob(base_dir + '28*')[0]
 device_file = device_folder + '/w1_slave'
 device_file1 = '/sys/bus/w1/devices/28-0000049cd8a6/w1_slave'
 device_file2 = '/sys/bus/w1/devices/28-000005454cf7/w1_slave'
-device_file3 = '/sys/bus/w1/devices/28-0000049cd8a6/w1_slave'
+device_file3 = '/sys/bus/w1/devices/28-000004e01b0c/w1_slave'
 
 print("T1: ", read_temp(device_file1))
 print("T2: ", read_temp(device_file2))
-
+print("T3: ", read_temp(device_file3))
+var=0
 '''
 # creating lof file
 logFileName = datetime.datetime.now().strftime("%y%m%d") + "FermentLogFile.csv"
@@ -120,23 +130,28 @@ try:
 
 	while True:
 		TempRead1 = read_temp(device_file1)
-		print("current temperature 1 is ", TempRead1, "degree Celsius" )
+		#print("current temperature 1 is ", TempRead1, "degree Celsius" )
 				
 		TempRead2 = read_temp(device_file2)
-		print("current temperature 2 is ", TempRead2, "degree Celsius" )
+		#print("current temperature 2 is ", TempRead2, "degree Celsius" )
 				
-		#TempRead3 = read_temp(device_file3)
+		TempRead3 = read_temp(device_file3)
 		#print("current temperature 1-2-3 is ", TempRead3, TempRead2, TempRead3, "degree Celsius at", datetime.datetime.now() )
 		
 		#GoogleSubmit(TempRead1, TempRead2, TempRead3)
 		#textLog(logFileName, datetime.datetime.now(), TempRead1, TempRead2, TempRead3 )
 
-		out = urllib.request.urlopen((FURL+str(TempRead1)), None)
+		out = urllib.request.urlopen((FURL1+str(TempRead1)
+                                              +FURL2+str(TempRead2)
+                                              +FURL3+str(TempRead3)), None)
+		#out = urllib.request.urlopen((FURL2+str(TempRead2)), None)
+		#out = urllib.request.urlopen(FURL1, None)
+		
 		#print(out)
                 #sendData(THINGSPEAKURL, THINGSPEAKKEY, 'field1', 23)
                 #sys.stdout.flush()
 		#print('CLOUD LOG DONE')
-
+		
 		# Write to LCD - clear displa and move cursor to start
 		I2CWrite(0xFE)
 		I2CWrite(0x58)
@@ -158,7 +173,10 @@ try:
 			I2CWrite(Tekst2[a])
 		I2CWrite(0x30+(int(TempRead2/10)))
 		I2CWrite(0x30+(int(TempRead2%10)))
-		
+		print("cycle",var," processed at", datetime.datetime.now(),
+                      "with T1 =", TempRead1, "and T2=", TempRead2,
+                      "and T3=", TempRead3)
+		var = var + 1
 		time.sleep(5)
     
 except KeyboardInterrupt:
